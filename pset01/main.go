@@ -21,6 +21,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -110,7 +111,7 @@ func HexToPubkey(s string) (PublicKey, error) {
 	// first, make sure hex string is of correct length
 	if len(s) != expectedLength {
 		return p, fmt.Errorf(
-			"Pubkey string %d characters, expect %d", expectedLength)
+			"Pubkey string %d characters, expect %d", len(s), expectedLength)
 	}
 
 	// decode from hex to a byte slice
@@ -121,10 +122,10 @@ func HexToPubkey(s string) (PublicKey, error) {
 	// we already checked the length of the hex string so don't need to re-check
 	buf := bytes.NewBuffer(bts)
 
-	for i, _ := range p.ZeroHash {
+	for i := range p.ZeroHash {
 		p.ZeroHash[i] = BlockFromByteSlice(buf.Next(32))
 	}
-	for i, _ := range p.OneHash {
+	for i := range p.OneHash {
 		p.OneHash[i] = BlockFromByteSlice(buf.Next(32))
 	}
 
@@ -188,7 +189,7 @@ func HexToSignature(s string) (Signature, error) {
 	// first, make sure hex string is of correct length
 	if len(s) != expectedLength {
 		return sig, fmt.Errorf(
-			"Pubkey string %d characters, expect %d", expectedLength)
+			"Pubkey string %d characters, expect %d", len(s), expectedLength)
 	}
 
 	// decode from hex to a byte slice
@@ -199,7 +200,7 @@ func HexToSignature(s string) (Signature, error) {
 	// we already checked the length of the hex string so don't need to re-check
 	buf := bytes.NewBuffer(bts)
 
-	for i, _ := range sig.Preimage {
+	for i := range sig.Preimage {
 		sig.Preimage[i] = BlockFromByteSlice(buf.Next(32))
 	}
 	return sig, nil
@@ -222,7 +223,22 @@ func GenerateKey() (SecretKey, PublicKey, error) {
 
 	// Your code here
 	// ===
+	b := make([]byte, 32)
+	for i := range sec.ZeroPre {
+		_, err := rand.Read(b)
+		if err != nil {
+			return sec, pub, err
+		}
+		sec.ZeroPre[i] = BlockFromByteSlice(b)
+		pub.ZeroHash[i] = sha256.Sum256(b)
 
+		_, err = rand.Read(b)
+		if err != nil {
+			return sec, pub, err
+		}
+		sec.OnePre[i] = BlockFromByteSlice(b)
+		pub.OneHash[i] = sha256.Sum256(b)
+	}
 	// ===
 	return sec, pub, nil
 }
@@ -233,6 +249,15 @@ func Sign(msg Message, sec SecretKey) Signature {
 
 	// Your code here
 	// ===
+	for i, v := range msg {
+		for shiftNum := 0; shiftNum < 8; shiftNum++ {
+			if ((v >> shiftNum) & 1) == 1 {
+				sig.Preimage[i*8+shiftNum] = sec.OnePre[i*8+shiftNum]
+			} else {
+				sig.Preimage[i*8+shiftNum] = sec.ZeroPre[i*8+shiftNum]
+			}
+		}
+	}
 
 	// ===
 	return sig
@@ -241,10 +266,21 @@ func Sign(msg Message, sec SecretKey) Signature {
 // Verify takes a message, public key and signature, and returns a boolean
 // describing the validity of the signature.
 func Verify(msg Message, pub PublicKey, sig Signature) bool {
-
 	// Your code here
 	// ===
-
+	for i, v := range msg {
+		for shiftNum := 0; shiftNum < 8; shiftNum++ {
+			if ((v >> shiftNum) & 1) == 1 {
+				if !sig.Preimage[i*8+shiftNum].IsPreimage(pub.OneHash[i*8+shiftNum]) {
+					return false
+				}
+			} else {
+				if !sig.Preimage[i*8+shiftNum].IsPreimage(pub.ZeroHash[i*8+shiftNum]) {
+					return false
+				}
+			}
+		}
+	}
 	// ===
 
 	return true
